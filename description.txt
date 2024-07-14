@@ -1,1 +1,1 @@
-- Base datasetクラスの内容をdatasetクラスにマージした。
+poetry run python3 eval.py outputs/2024-07-14/19-44-54/model_best.pt

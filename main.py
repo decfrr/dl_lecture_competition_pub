@@ -1,7 +1,6 @@
-import os, sys
-import numpy as np
-import torch
+import os
 import torch.nn.functional as F
+from torchvision import transforms
 from torchmetrics import Accuracy
 import hydra
 from omegaconf import DictConfig
@@ -10,7 +9,10 @@ from termcolor import cprint
 from tqdm import tqdm
 
 from src.datasets import ThingsMEGDataset
-from src.models import BasicConvClassifier
+from src.transform import *
+# from src.models import BasicConvClassifier
+from src.conv_model import AdvancedConvClassifier
+from src.loss import FocalCrossEntropyLoss
 from src.utils import set_seed
 
 
@@ -27,11 +29,30 @@ def run(args: DictConfig):
     # ------------------
     loader_args = {"batch_size": args.batch_size, "num_workers": args.num_workers}
 
-    train_set = ThingsMEGDataset("train", args.data_dir)
+    train_transform = transforms.Compose([
+        NormalizeTransform(),
+        AddNoiseTransform(noise_level=0.01),
+        RandomCropTransform(crop_size=200),  # Adjust crop size as needed
+        RandomTimeWarpTransform(),
+        RandomScalingTransform(),
+        RandomErasingTransform(p=0.5)
+    ])
+
+    test_transform = transforms.Compose([
+        NormalizeTransform()
+    ])
+
+    # loader
+    # wave data X: (65728, 271, 281) ... (batch_size, num_channels, seq_len)
+    # class label Y: (65728,) ... (batch_size,) 1854 classes 0-1853
+    # subject index: (65728,) ... (batch_size,) 4 subjects 0-3
+    # transformer
+    # NOTE: va and test only need normalization
+    train_set = ThingsMEGDataset("train", args.data_dir, transform=train_transform)
     train_loader = torch.utils.data.DataLoader(train_set, shuffle=True, **loader_args)
-    val_set = ThingsMEGDataset("val", args.data_dir)
+    val_set = ThingsMEGDataset("val", args.data_dir, transform=test_transform)
     val_loader = torch.utils.data.DataLoader(val_set, shuffle=False, **loader_args)
-    test_set = ThingsMEGDataset("test", args.data_dir)
+    test_set = ThingsMEGDataset("test", args.data_dir, transform=test_transform)
     test_loader = torch.utils.data.DataLoader(
         test_set, shuffle=False, batch_size=args.batch_size, num_workers=args.num_workers
     )
@@ -39,14 +60,23 @@ def run(args: DictConfig):
     # ------------------
     #       Model
     # ------------------
-    model = BasicConvClassifier(
-        train_set.num_classes, train_set.seq_len, train_set.num_channels
+    # model = BasicConvClassifier(
+    #     train_set.num_classes, train_set.seq_len, train_set.num_channels
+    # ).to(args.device)
+    model = AdvancedConvClassifier(
+        num_classes=train_set.num_classes,
+        num_subjects=4,
+        in_channels=train_set.num_channels,
+        seq_len=train_set.seq_len,
     ).to(args.device)
+
+    # New Loss Function
+    criterion = FocalCrossEntropyLoss()
 
     # ------------------
     #     Optimizer
     # ------------------
-    optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
+    optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=model.l2_reg)
 
     # ------------------
     #   Start training
@@ -65,9 +95,10 @@ def run(args: DictConfig):
         for X, y, subject_idxs in tqdm(train_loader, desc="Train"):
             X, y = X.to(args.device), y.to(args.device)
 
-            y_pred = model(X)
+            y_pred = model(X, subject_idxs.to(args.device))
 
-            loss = F.cross_entropy(y_pred, y)
+            # loss = F.cross_entropy(y_pred, y)
+            loss = criterion(y_pred, y)
             train_loss.append(loss.item())
 
             optimizer.zero_grad()
