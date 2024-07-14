@@ -1,13 +1,15 @@
 import os
 import numpy as np
 import torch
+from torchvision import transforms
 import hydra
 from omegaconf import DictConfig
 from termcolor import cprint
 from tqdm import tqdm
 
 from src.datasets import ThingsMEGDataset
-from src.models import BasicConvClassifier
+from src.transform import NormalizeTransform
+from src.conv_model import AdvancedConvClassifier
 from src.utils import set_seed
 
 
@@ -19,8 +21,11 @@ def run(args: DictConfig):
 
     # ------------------
     #    Dataloader
-    # ------------------    
-    test_set = ThingsMEGDataset("test", args.data_dir)
+    # ------------------
+    test_transform = transforms.Compose([
+        NormalizeTransform()
+    ])
+    test_set = ThingsMEGDataset("test", args.data_dir, transform=test_transform)
     test_loader = torch.utils.data.DataLoader(
         test_set, shuffle=False, batch_size=args.batch_size, num_workers=args.num_workers
     )
@@ -28,10 +33,15 @@ def run(args: DictConfig):
     # ------------------
     #       Model
     # ------------------
-    model = BasicConvClassifier(
-        test_set.num_classes, test_set.seq_len, test_set.num_channels
+    # model = BasicConvClassifier(
+    #     train_set.num_classes, train_set.seq_len, train_set.num_channels
+    # ).to(args.device)
+    model = AdvancedConvClassifier(
+        num_classes=test_set.num_classes,
+        num_subjects=4,
+        in_channels=test_set.num_channels,
+        seq_len=test_set.seq_len,
     ).to(args.device)
-    model.load_state_dict(torch.load(args.model_path, map_location=args.device))
 
     # ------------------
     #  Start evaluation

@@ -1,1 +1,1 @@
-poetry run python3 eval.py outputs/2024-07-14/19-44-54/model_best.pt
+poetry run python3 eval.py model_path=outputs/2024-07-14/19-44-54/model_best.pt
