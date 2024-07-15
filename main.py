@@ -113,7 +113,7 @@ def run(args: DictConfig):
             X, y = X.to(args.device), y.to(args.device)
 
             with torch.no_grad():
-                y_pred = model(X)
+                y_pred = model(X, subject_idxs.to(args.device))
 
             val_loss.append(F.cross_entropy(y_pred, y).item())
             val_acc.append(accuracy(y_pred, y).item())
@@ -139,7 +139,7 @@ def run(args: DictConfig):
     preds = []
     model.eval()
     for X, subject_idxs in tqdm(test_loader, desc="Validation"):
-        preds.append(model(X.to(args.device)).detach().cpu())
+        preds.append(model(X.to(args.device), subject_idxs.to(args.device)).detach().cpu())
 
     preds = torch.cat(preds, dim=0).numpy()
     np.save(os.path.join(logdir, "submission"), preds)
